@@ -5,6 +5,29 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Thunder Fighter</title>
   <style>
+    .mobile-controls {
+      margin-top: 12px;
+      display: flex;
+      justify-content: center;
+      gap: 18px;
+    }
+
+    .mobile-controls button {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 20px;
+      font-weight: bold;
+      padding: 14px 24px;
+      border-radius: 12px;
+      border: 2px solid #ffe45c;
+      background: #111122;
+      color: #ffe45c;
+      box-shadow: 0 0 10px #333;
+    }
+
+    .mobile-controls button:active {
+      background: #ffe45c;
+      color: #050510;
+    }
     body {
       margin: 0;
       background: #050510;
@@ -53,6 +76,10 @@
       <span>A / ←</span> Move Left　
       <span>D / →</span> Move Right　
       <span>R</span> Restart
+    </div>
+    <div class="mobile-controls">
+      <button id="leftBtn">← LEFT</button>
+      <button id="rightBtn">RIGHT →</button>
     </div>
   </div>
 
@@ -684,6 +711,13 @@
       if (["arrowleft", "arrowright", " "].includes(key)) {
         event.preventDefault();
       }
+    });
+    document.getElementById("leftBtn").addEventListener("click", () => {
+      playerCol = Math.max(0, playerCol - 1);
+    });
+
+    document.getElementById("rightBtn").addEventListener("click", () => {
+      playerCol = Math.min(COLUMNS - 1, playerCol + 1);
     });
 
     resetGame();
