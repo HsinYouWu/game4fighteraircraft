@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Thunder Fighter</title>
+  <title>Fighter Aircraft</title>
   <style>
     .mobile-controls {
       margin-top: 12px;
@@ -27,6 +27,38 @@
     .mobile-controls button:active {
       background: #ffe45c;
       color: #050510;
+    }
+
+    .top-controls {
+      position: relative;
+      width: 520px;
+      max-width: 95vw;
+      margin: 0 auto;
+    }
+
+    .pause-button {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 5;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 14px;
+      font-weight: bold;
+      padding: 8px 12px;
+      border-radius: 10px;
+      border: 2px solid #50a7ff;
+      background: rgba(17, 17, 34, 0.9);
+      color: #ffffff;
+      box-shadow: 0 0 10px #333;
+    }
+
+    .pause-button:active {
+      background: #50a7ff;
+      color: #050510;
+    }
+
+    #actionBtn {
+      min-width: 120px;
     }
     body {
       margin: 0;
@@ -88,26 +120,37 @@
         right: 0;
         bottom: 12px;
         z-index: 10;
+        gap: 8px;
       }
 
       .mobile-controls button {
-        font-size: 18px;
-        padding: 14px 22px;
+        font-size: 15px;
+        padding: 12px 12px;
+      }
+
+      #actionBtn {
+        min-width: 92px;
       }
     }
   </style>
 </head>
 <body>
   <div class="game-wrapper">
-    <h1>THUNDER FIGHTER</h1>
-    <canvas id="gameCanvas" width="520" height="720"></canvas>
+    <h1>FIGHTER AIRCRAFT</h1>
+    <div class="top-controls">
+      <canvas id="gameCanvas" width="520" height="720"></canvas>
+      <button id="pauseBtn" class="pause-button">PAUSE</button>
+    </div>
     <div class="help">
+      <span>S / R</span> Start　
       <span>A / ←</span> Move Left　
       <span>D / →</span> Move Right　
+      <span>P</span> Pause　
       <span>R</span> Restart
     </div>
     <div class="mobile-controls">
       <button id="leftBtn">← LEFT</button>
+      <button id="actionBtn">START</button>
       <button id="rightBtn">RIGHT →</button>
     </div>
   </div>
@@ -152,7 +195,9 @@
     const EXPLOSION_TIME = 4000;
 
     let keys = {};
-    let gameState = "playing"; // playing, warning, boss, explosion, win, gameover
+    let gameState = "start"; // start, playing, warning, boss, explosion, win, gameover
+    let isPaused = false;
+    let pauseStartTime = 0;
     let playerCol;
     let powerLevel;
     let score;
@@ -175,13 +220,15 @@
     let lastPlayerBulletMoveTime;
     let lastEnemyBulletMoveTime;
 
-    function resetGame() {
-      gameState = "playing";
+    function resetGame(nextState = "start") {
+      gameState = nextState;
+      isPaused = false;
+      pauseStartTime = 0;
 
       playerCol = Math.floor(COLUMNS / 2);
       powerLevel = 1;
       score = 0;
-      message = "Destroy X for a chance to upgrade!";
+      message = nextState === "start" ? "Press S or R to start!" : "Destroy X for a chance to upgrade!";
 
       enemies = [];
       playerBullets = [];
@@ -199,6 +246,61 @@
       lastBossMoveTime = 0;
       lastPlayerBulletMoveTime = 0;
       lastEnemyBulletMoveTime = 0;
+    }
+
+    function startGame() {
+      resetGame("playing");
+    }
+
+    function canPlay() {
+      return gameState === "playing" || gameState === "warning" || gameState === "boss" || gameState === "explosion";
+    }
+
+    function canMovePlayer() {
+      return !isPaused && (gameState === "playing" || gameState === "warning" || gameState === "boss");
+    }
+
+    function handleStartOrRestart() {
+      startGame();
+    }
+
+    function togglePause(now = performance.now()) {
+      if (!canPlay() || gameState === "start") return;
+
+      if (!isPaused) {
+        isPaused = true;
+        pauseStartTime = now;
+        return;
+      }
+
+      const pausedDuration = now - pauseStartTime;
+      isPaused = false;
+      pauseStartTime = 0;
+
+      warningStartTime += pausedDuration;
+      explosionStartTime += pausedDuration;
+      lastPlayerShotTime += pausedDuration;
+      lastEnemyMoveTime += pausedDuration;
+      lastBossAttackTime += pausedDuration;
+      lastBossMoveTime += pausedDuration;
+      lastPlayerBulletMoveTime += pausedDuration;
+      lastEnemyBulletMoveTime += pausedDuration;
+    }
+
+    function updateButtons() {
+      const actionBtn = document.getElementById("actionBtn");
+      const pauseBtn = document.getElementById("pauseBtn");
+
+      if (gameState === "start") {
+        actionBtn.textContent = "START";
+      } else if (gameState === "gameover" || gameState === "win") {
+        actionBtn.textContent = "RESTART";
+      } else {
+        actionBtn.textContent = isPaused ? "RESUME" : "RESTART";
+      }
+
+      pauseBtn.textContent = isPaused ? "RESUME" : "PAUSE";
+      pauseBtn.disabled = gameState === "start" || gameState === "gameover" || gameState === "win";
     }
 
     function getBulletColumns() {
@@ -347,7 +449,7 @@
     function drawGame(now) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      drawText("THUNDER FIGHTER", canvas.width / 2, 26, "#ffe45c", 26);
+      drawText("FIGHTER AIRCRAFT", canvas.width / 2, 26, "#ffe45c", 26);
       drawText(`Score: ${score} | Power: ${powerLevel}`, canvas.width / 2, 58, "#ffffff", 18);
       drawText(message, canvas.width / 2, 82, "#cccccc", 16);
 
@@ -400,8 +502,28 @@
 
         drawText(resultText, canvas.width / 2, canvas.height / 2 - 40, resultColor, 42);
         drawText(`Final Score: ${score}`, canvas.width / 2, canvas.height / 2 + 8, "#ffffff", 22);
-        drawText("Press R to restart", canvas.width / 2, canvas.height / 2 + 48, "#cccccc", 18);
+        drawText("Press R or tap RESTART", canvas.width / 2, canvas.height / 2 + 48, "#cccccc", 18);
       }
+
+      if (gameState === "start") {
+        ctx.fillStyle = "rgba(0, 0, 0, 0.72)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        drawText("FIGHTER AIRCRAFT", canvas.width / 2, canvas.height / 2 - 78, "#ffe45c", 38);
+        drawText("Press S or R to start", canvas.width / 2, canvas.height / 2 - 18, "#ffffff", 22);
+        drawText("Tap START on mobile", canvas.width / 2, canvas.height / 2 + 22, "#cccccc", 18);
+        drawText("A / ← and D / → to move", canvas.width / 2, canvas.height / 2 + 62, "#cccccc", 16);
+      }
+
+      if (isPaused) {
+        ctx.fillStyle = "rgba(0, 0, 0, 0.72)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        drawText("PAUSED", canvas.width / 2, canvas.height / 2 - 20, "#50a7ff", 42);
+        drawText("Press P or tap RESUME", canvas.width / 2, canvas.height / 2 + 28, "#ffffff", 20);
+      }
+
+      updateButtons();
 
       if (gameState === "warning") {
         ctx.fillStyle = "rgba(80, 0, 0, 0.25)";
@@ -719,10 +841,12 @@
     }
 
     function gameLoop(now) {
-      if (gameState === "playing" || gameState === "warning" || gameState === "boss") {
-        updatePlaying(now);
-      } else if (gameState === "explosion") {
-        updateExplosion(now);
+      if (!isPaused) {
+        if (gameState === "playing" || gameState === "warning" || gameState === "boss") {
+          updatePlaying(now);
+        } else if (gameState === "explosion") {
+          updateExplosion(now);
+        }
       }
 
       drawGame(now);
@@ -731,22 +855,48 @@
 
     document.addEventListener("keydown", event => {
       const key = event.key.toLowerCase();
-      keys[key] = true;
+
+      if (key === "s" && gameState === "start") {
+        startGame();
+      }
 
       if (key === "r") {
-        resetGame();
+        handleStartOrRestart();
+      }
+
+      if (key === "p") {
+        togglePause();
+      }
+
+      if (canMovePlayer()) {
+        keys[key] = true;
       }
 
       if (["arrowleft", "arrowright", " "].includes(key)) {
         event.preventDefault();
       }
     });
+
     document.getElementById("leftBtn").addEventListener("click", () => {
+      if (!canMovePlayer()) return;
       playerCol = Math.max(0, playerCol - 1);
     });
 
     document.getElementById("rightBtn").addEventListener("click", () => {
+      if (!canMovePlayer()) return;
       playerCol = Math.min(COLUMNS - 1, playerCol + 1);
+    });
+
+    document.getElementById("actionBtn").addEventListener("click", () => {
+      if (isPaused) {
+        togglePause();
+      } else {
+        handleStartOrRestart();
+      }
+    });
+
+    document.getElementById("pauseBtn").addEventListener("click", () => {
+      togglePause();
     });
 
     resetGame();
