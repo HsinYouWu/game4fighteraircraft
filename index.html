@@ -29,36 +29,16 @@
       color: #050510;
     }
 
-    .top-controls {
-      position: relative;
-      width: 520px;
-      max-width: 95vw;
-      margin: 0 auto;
-    }
 
-    .pause-button {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      z-index: 5;
-      font-family: Consolas, "Courier New", monospace;
-      font-size: 14px;
-      font-weight: bold;
-      padding: 8px 12px;
-      border-radius: 10px;
-      border: 2px solid #50a7ff;
-      background: rgba(17, 17, 34, 0.9);
-      color: #ffffff;
-      box-shadow: 0 0 10px #333;
-    }
-
-    .pause-button:active {
-      background: #50a7ff;
-      color: #050510;
+    #leftBtn,
+    #rightBtn {
+      min-width: 130px;
+      box-sizing: border-box;
     }
 
     #actionBtn {
       min-width: 120px;
+      box-sizing: border-box;
     }
     body {
       margin: 0;
@@ -128,6 +108,11 @@
         padding: 12px 12px;
       }
 
+      #leftBtn,
+      #rightBtn {
+        min-width: 104px;
+      }
+
       #actionBtn {
         min-width: 92px;
       }
@@ -137,15 +122,12 @@
 <body>
   <div class="game-wrapper">
     <h1>FIGHTER AIRCRAFT</h1>
-    <div class="top-controls">
-      <canvas id="gameCanvas" width="520" height="720"></canvas>
-      <button id="pauseBtn" class="pause-button">PAUSE</button>
-    </div>
+    <canvas id="gameCanvas" width="520" height="720"></canvas>
     <div class="help">
       <span>S / R</span> Start　
       <span>A / ←</span> Move Left　
       <span>D / →</span> Move Right　
-      <span>P</span> Pause　
+      <span>P</span> Pause / Resume　
       <span>R</span> Restart
     </div>
     <div class="mobile-controls">
@@ -202,6 +184,20 @@
     let powerLevel;
     let score;
     let message;
+    let popups;
+    const DEFAULT_POPUP_DURATION = 1000;
+    const POPUP_DURATION = 1500;
+    const KILL_DURATION = 700;
+
+    function createEmptyPopup() {
+      return {
+        message: "",
+        color: "#ffe45c",
+        startTime: 0,
+        duration: DEFAULT_POPUP_DURATION,
+        size: 22
+      };
+    }
 
     let enemies;
     let playerBullets;
@@ -229,6 +225,11 @@
       powerLevel = 1;
       score = 0;
       message = nextState === "start" ? "Press S or R to start!" : "Destroy X for a chance to upgrade!";
+      popups = {
+        main: createEmptyPopup(),
+        kill: createEmptyPopup(),
+        upgrade: createEmptyPopup()
+      };
 
       enemies = [];
       playerBullets = [];
@@ -289,18 +290,24 @@
 
     function updateButtons() {
       const actionBtn = document.getElementById("actionBtn");
-      const pauseBtn = document.getElementById("pauseBtn");
 
       if (gameState === "start") {
         actionBtn.textContent = "START";
       } else if (gameState === "gameover" || gameState === "win") {
         actionBtn.textContent = "RESTART";
       } else {
-        actionBtn.textContent = isPaused ? "RESUME" : "RESTART";
+        actionBtn.textContent = isPaused ? "RESUME" : "PAUSE";
       }
+    }
 
-      pauseBtn.textContent = isPaused ? "RESUME" : "PAUSE";
-      pauseBtn.disabled = gameState === "start" || gameState === "gameover" || gameState === "win";
+    function showPopup(text, color = "#ffe45c", duration = DEFAULT_POPUP_DURATION, size = 22, slot = "main") {
+      popups[slot] = {
+        message: text,
+        color,
+        duration,
+        size,
+        startTime: performance.now()
+      };
     }
 
     function getBulletColumns() {
@@ -384,10 +391,10 @@
     function drawHpBar() {
       if (gameState !== "boss" && gameState !== "explosion") return;
 
-      const barX = 100;
-      const barY = 58;
-      const barW = 320;
-      const barH = 18;
+      const barX = 110;
+      const barY = 74;
+      const barW = 300;
+      const barH = 14;
       const ratio = Math.max(0, bossHp / BOSS_HP_MAX);
 
       ctx.fillStyle = "#333";
@@ -399,7 +406,7 @@
       ctx.strokeStyle = "#ddd";
       ctx.strokeRect(barX, barY, barW, barH);
 
-      drawText(`Boss HP ${bossHp}/${BOSS_HP_MAX}`, canvas.width / 2, barY + 36, "#ddd", 16);
+      drawText(`Boss HP ${bossHp}/${BOSS_HP_MAX}`, canvas.width / 2, barY + barH / 2, "#ffffff", 12);
     }
 
     function drawBoss() {
@@ -443,7 +450,32 @@
         }
       }
 
-      drawText("BOSS DESTROYED!", canvas.width / 2, 42, "#ff3b3b", 26);
+      // The center popup handles the boss destroyed message. Keeping this area clear prevents top text from crowding the score and HP bar.
+    }
+
+    function drawPopupLine(now, slot, y) {
+      const popup = popups[slot];
+      if (!popup || !popup.message) return;
+
+      const elapsed = now - popup.startTime;
+      if (elapsed > popup.duration) {
+        popup.message = "";
+        return;
+      }
+
+      const fadeStart = popup.duration * 0.65;
+      const alpha = elapsed > fadeStart ? 1 - (elapsed - fadeStart) / (popup.duration - fadeStart) : 1;
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      drawText(popup.message, canvas.width / 2, y, popup.color, popup.size);
+      ctx.restore();
+    }
+
+    function drawPopup(now) {
+      drawPopupLine(now, "main", canvas.height / 2 - 28);
+      drawPopupLine(now, "kill", canvas.height / 2 - 28);
+      drawPopupLine(now, "upgrade", canvas.height / 2 + 2);
     }
 
     function drawGame(now) {
@@ -451,7 +483,10 @@
 
       drawText("FIGHTER AIRCRAFT", canvas.width / 2, 26, "#ffe45c", 26);
       drawText(`Score: ${score} | Power: ${powerLevel}`, canvas.width / 2, 58, "#ffffff", 18);
-      drawText(message, canvas.width / 2, 82, "#cccccc", 16);
+
+      if (gameState !== "boss" && gameState !== "explosion") {
+        drawText(message, canvas.width / 2, 82, "#cccccc", 16);
+      }
 
       drawGrid();
       drawHpBar();
@@ -492,6 +527,10 @@
 
       const playerPos = cellCenter(playerCol, ROWS - 1);
       drawText(PLAYER, playerPos.x, playerPos.y, "#ffe45c", 24);
+
+      if (gameState !== "start" && gameState !== "gameover" && gameState !== "win" && !isPaused) {
+        drawPopup(now);
+      }
 
       if (gameState === "gameover" || gameState === "win") {
         ctx.fillStyle = "rgba(0, 0, 0, 0.72)";
@@ -763,6 +802,7 @@
           playerBullets = [];
           enemyBullets = [];
           message = "BOSS DESTROYED!";
+          showPopup("BOSS DESTROYED!", "#ff3b3b", DEFAULT_POPUP_DURATION, 34);
           return;
         }
       }
@@ -792,19 +832,19 @@
                 if (Math.random() < UPGRADE_CHANCE) {
                   if (powerLevel === 1) {
                     powerLevel = 3;
-                    message = "Upgrade! Triple shot!";
+                    showPopup("Upgrade! Triple shot!", "#ffe45c", POPUP_DURATION, 22, "upgrade");
                   } else if (powerLevel === 3) {
                     powerLevel = 5;
-                    message = "Upgrade! Five-way shot!";
+                    showPopup("Upgrade! Five-way shot!", "#ffe45c", POPUP_DURATION, 22, "upgrade");
                   } else {
-                    message = "Big enemy destroyed!";
+                    showPopup("Big enemy destroyed!", "#2f9ca6", KILL_DURATION, 22, "kill");
                   }
                 } else {
-                  message = "Big enemy destroyed!";
+                  showPopup("Big enemy destroyed!", "#2f9ca6", KILL_DURATION, 22, "kill");
                 }
               } else {
                 score += 10;
-                message = "Small enemy destroyed!";
+                showPopup("Small enemy destroyed!", "#4ca64c", KILL_DURATION, 22, "kill");
               }
             }
           } else {
@@ -888,15 +928,11 @@
     });
 
     document.getElementById("actionBtn").addEventListener("click", () => {
-      if (isPaused) {
-        togglePause();
-      } else {
+      if (gameState === "start" || gameState === "gameover" || gameState === "win") {
         handleStartOrRestart();
+      } else {
+        togglePause();
       }
-    });
-
-    document.getElementById("pauseBtn").addEventListener("click", () => {
-      togglePause();
     });
 
     resetGame();
