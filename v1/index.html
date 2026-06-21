@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fighter Aircraft</title>
+  <style>
+    .mobile-controls {
+      margin-top: 12px;
+      display: flex;
+      justify-content: center;
+      gap: 18px;
+    }
+
+    .mobile-controls button {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 20px;
+      font-weight: bold;
+      padding: 14px 24px;
+      border-radius: 12px;
+      border: 2px solid #ffe45c;
+      background: #111122;
+      color: #ffe45c;
+      box-shadow: 0 0 10px #333;
+    }
+
+    .mobile-controls button:active {
+      background: #ffe45c;
+      color: #050510;
+    }
+
+
+    #leftBtn,
+    #rightBtn {
+      min-width: 130px;
+      box-sizing: border-box;
+    }
+
+    #actionBtn {
+      min-width: 120px;
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      background: #050510;
+      color: white;
+      font-family: Consolas, "Courier New", monospace;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+      overflow: auto;
+    }
+
+    .game-wrapper {
+      text-align: center;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      letter-spacing: 3px;
+      color: #ffe45c;
+      text-shadow: 0 0 10px #ffe45c;
+    }
+
+    canvas {
+      background: #0b0b18;
+      border: 3px solid #777;
+      box-shadow: 0 0 20px #333;
+      max-width: 95vw;
+      height: auto;
+    }
+
+    .help {
+      margin-top: 10px;
+      font-size: 14px;
+      color: #ccc;
+    }
+
+    .help span {
+      color: #ffe45c;
+    }
+    @media (max-width: 600px) {
+      .game-wrapper {
+        padding-top: 8px;
+        padding-bottom: 100px;
+      }
+
+      h1 {
+        font-size: 22px;
+      }
+
+      .help {
+        font-size: 12px;
+      }
+
+      .mobile-controls {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 12px;
+        z-index: 10;
+        gap: 8px;
+      }
+
+      .mobile-controls button {
+        font-size: 15px;
+        padding: 12px 12px;
+      }
+
+      #leftBtn,
+      #rightBtn {
+        min-width: 104px;
+      }
+
+      #actionBtn {
+        min-width: 92px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="game-wrapper">
+    <h1>FIGHTER AIRCRAFT</h1>
+    <canvas id="gameCanvas" width="520" height="720"></canvas>
+    <div class="help">
+      <span>S / R</span> Start　
+      <span>A / ←</span> Move Left　
+      <span>D / →</span> Move Right　
+      <span>P</span> Pause / Resume　
+      <span>R</span> Restart
+    </div>
+    <div class="mobile-controls">
+      <button id="leftBtn">← LEFT</button>
+      <button id="actionBtn">START</button>
+      <button id="rightBtn">RIGHT →</button>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    // Game settings
+    const COLUMNS = 9;
+    const ROWS = 18;
+    const CELL_W = 42;
+    const CELL_H = 32;
+    const GRID_X = 70;
+    const GRID_Y = 90;
+
+    const PLAYER = "/A\\";
+    const SMALL_ENEMY = "x";
+    const BIG_ENEMY = "X";
+    const BOSS = "M";
+    const PLAYER_BULLET = "|";
+    const ENEMY_BULLET = "!";
+    const BOSS_STRAIGHT_BULLET = "+";
+    const BOSS_DIAGONAL_BULLET = "*";
+
+    const PLAYER_SHOOT_COOLDOWN = 260;
+    const ENEMY_SPAWN_CHANCE = 0.018;
+    const ENEMY_SHOOT_CHANCE = 0.003;
+    const BIG_ENEMY_CHANCE = 0.35;
+    const UPGRADE_CHANCE = 0.35;
+    const ENEMY_MOVE_COOLDOWN = 1100;
+    const BOSS_ATTACK_COOLDOWN = 1900;
+    const BOSS_MOVE_COOLDOWN = 500;
+
+    const PLAYER_BULLET_MOVE_COOLDOWN = 90;
+    const ENEMY_BULLET_MOVE_COOLDOWN = 140;
+
+    const BOSS_SCORE = 500;
+    const BOSS_HP_MAX = 100;
+    const BOSS_WIDTH = 5;
+    const BOSS_WARNING_TIME = 3000;
+    const EXPLOSION_TIME = 4000;
+
+    let keys = {};
+    let gameState = "start"; // start, playing, warning, boss, explosion, win, gameover
+    let isPaused = false;
+    let pauseStartTime = 0;
+    let playerCol;
+    let powerLevel;
+    let score;
+    let message;
+    let popups;
+    const DEFAULT_POPUP_DURATION = 1000;
+    const POPUP_DURATION = 1500;
+    const KILL_DURATION = 700;
+
+    function createEmptyPopup() {
+      return {
+        message: "",
+        color: "#ffe45c",
+        startTime: 0,
+        duration: DEFAULT_POPUP_DURATION,
+        size: 22
+      };
+    }
+
+    let enemies;
+    let playerBullets;
+    let enemyBullets;
+
+    let bossHp;
+    let bossLeft;
+    let bossDirection;
+    let warningStartTime;
+    let explosionStartTime;
+
+    let lastPlayerShotTime;
+    let lastEnemyMoveTime;
+    let lastBossAttackTime;
+    let lastBossMoveTime;
+    let lastPlayerBulletMoveTime;
+    let lastEnemyBulletMoveTime;
+
+    function resetGame(nextState = "start") {
+      gameState = nextState;
+      isPaused = false;
+      pauseStartTime = 0;
+
+      playerCol = Math.floor(COLUMNS / 2);
+      powerLevel = 1;
+      score = 0;
+      message = nextState === "start" ? "Press S or R to start!" : "Destroy X for a chance to upgrade!";
+      popups = {
+        main: createEmptyPopup(),
+        kill: createEmptyPopup(),
+        upgrade: createEmptyPopup()
+      };
+
+      enemies = [];
+      playerBullets = [];
+      enemyBullets = [];
+
+      bossHp = BOSS_HP_MAX;
+      bossLeft = Math.floor((COLUMNS - BOSS_WIDTH) / 2);
+      bossDirection = 1;
+      warningStartTime = 0;
+      explosionStartTime = 0;
+
+      lastPlayerShotTime = 0;
+      lastEnemyMoveTime = 0;
+      lastBossAttackTime = 0;
+      lastBossMoveTime = 0;
+      lastPlayerBulletMoveTime = 0;
+      lastEnemyBulletMoveTime = 0;
+    }
+
+    function startGame() {
+      resetGame("playing");
+    }
+
+    function canPlay() {
+      return gameState === "playing" || gameState === "warning" || gameState === "boss" || gameState === "explosion";
+    }
+
+    function canMovePlayer() {
+      return !isPaused && (gameState === "playing" || gameState === "warning" || gameState === "boss");
+    }
+
+    function handleStartOrRestart() {
+      startGame();
+    }
+
+    function togglePause(now = performance.now()) {
+      if (!canPlay() || gameState === "start") return;
+
+      if (!isPaused) {
+        isPaused = true;
+        pauseStartTime = now;
+        return;
+      }
+
+      const pausedDuration = now - pauseStartTime;
+      isPaused = false;
+      pauseStartTime = 0;
+
+      warningStartTime += pausedDuration;
+      explosionStartTime += pausedDuration;
+      lastPlayerShotTime += pausedDuration;
+      lastEnemyMoveTime += pausedDuration;
+      lastBossAttackTime += pausedDuration;
+      lastBossMoveTime += pausedDuration;
+      lastPlayerBulletMoveTime += pausedDuration;
+      lastEnemyBulletMoveTime += pausedDuration;
+    }
+
+    function updateButtons() {
+      const actionBtn = document.getElementById("actionBtn");
+
+      if (gameState === "start") {
+        actionBtn.textContent = "START";
+      } else if (gameState === "gameover" || gameState === "win") {
+        actionBtn.textContent = "RESTART";
+      } else {
+        actionBtn.textContent = isPaused ? "RESUME" : "PAUSE";
+      }
+    }
+
+    function showPopup(text, color = "#ffe45c", duration = DEFAULT_POPUP_DURATION, size = 22, slot = "main") {
+      popups[slot] = {
+        message: text,
+        color,
+        duration,
+        size,
+        startTime: performance.now()
+      };
+    }
+
+    function getBulletColumns() {
+      let offsets;
+
+      if (powerLevel === 1) {
+        offsets = [0];
+      } else if (powerLevel === 3) {
+        offsets = [-1, 0, 1];
+      } else {
+        offsets = [-2, -1, 0, 1, 2];
+      }
+
+      return offsets
+        .map(offset => playerCol + offset)
+        .filter(col => col >= 0 && col < COLUMNS);
+    }
+
+    function downgradePower() {
+      if (powerLevel === 5) {
+        powerLevel = 3;
+        message = "Hit! Power downgraded to 3!";
+      } else if (powerLevel === 3) {
+        powerLevel = 1;
+        message = "Hit! Power downgraded to 1!";
+      } else {
+        gameState = "gameover";
+        message = "GAME OVER";
+      }
+    }
+
+    function drawText(text, x, y, color, size = 24, align = "center", bold = true) {
+      ctx.fillStyle = color;
+      ctx.font = `${bold ? "bold" : ""} ${size}px Consolas, Courier New, monospace`;
+      ctx.textAlign = align;
+      ctx.textBaseline = "middle";
+      ctx.fillText(text, x, y);
+    }
+
+    function cellCenter(col, row) {
+      return {
+        x: GRID_X + col * CELL_W + CELL_W / 2,
+        y: GRID_Y + row * CELL_H + CELL_H / 2
+      };
+    }
+
+    function drawGrid() {
+      ctx.strokeStyle = "#777";
+      ctx.lineWidth = 2;
+
+      const left = GRID_X;
+      const top = GRID_Y;
+      const right = GRID_X + COLUMNS * CELL_W;
+      const bottom = GRID_Y + ROWS * CELL_H;
+
+      ctx.strokeRect(left, top, COLUMNS * CELL_W, ROWS * CELL_H);
+
+      ctx.strokeStyle = "#222";
+      ctx.lineWidth = 1;
+
+      for (let c = 1; c < COLUMNS; c++) {
+        const x = GRID_X + c * CELL_W;
+        ctx.beginPath();
+        ctx.moveTo(x, top);
+        ctx.lineTo(x, bottom);
+        ctx.stroke();
+      }
+
+      ctx.strokeStyle = "#999";
+      ctx.beginPath();
+      ctx.moveTo(left, bottom);
+      ctx.lineTo(right, bottom);
+      ctx.stroke();
+
+      for (let c = 0; c < COLUMNS; c++) {
+        const pos = cellCenter(c, ROWS);
+        drawText(String(c + 1), pos.x, bottom + 22, "#999", 16, "center", false);
+      }
+    }
+
+    function drawHpBar() {
+      if (gameState !== "boss" && gameState !== "explosion") return;
+
+      const barX = 110;
+      const barY = 74;
+      const barW = 300;
+      const barH = 14;
+      const ratio = Math.max(0, bossHp / BOSS_HP_MAX);
+
+      ctx.fillStyle = "#333";
+      ctx.fillRect(barX, barY, barW, barH);
+
+      ctx.fillStyle = ratio > 0.5 ? "#ff4bd8" : ratio > 0.25 ? "#ffb347" : "#ff3b3b";
+      ctx.fillRect(barX, barY, barW * ratio, barH);
+
+      ctx.strokeStyle = "#ddd";
+      ctx.strokeRect(barX, barY, barW, barH);
+
+      drawText(`Boss HP ${bossHp}/${BOSS_HP_MAX}`, canvas.width / 2, barY + barH / 2, "#ffffff", 12);
+    }
+
+    function drawBoss() {
+      if (gameState !== "boss") return;
+
+      for (let col = bossLeft; col < bossLeft + BOSS_WIDTH; col++) {
+        for (let row = 1; row <= 2; row++) {
+          const pos = cellCenter(col, row);
+          drawText(BOSS, pos.x, pos.y, "#ff4bd8", 26);
+        }
+      }
+    }
+
+    function drawExplosion(now) {
+      const elapsed = now - explosionStartTime;
+      const frame = Math.floor(elapsed / 180) % 5;
+
+      const frames = [
+        ["  *  ", " *** ", "  *  "],
+        [" *** ", "*****", " *** "],
+        ["*****", "**#**", "*****"],
+        [" *** ", "*###*", " *** "],
+        ["  *  ", " *** ", "  *  "]
+      ];
+
+      const shape = frames[frame];
+
+      for (let r = 0; r < shape.length; r++) {
+        for (let c = 0; c < shape[r].length; c++) {
+          const ch = shape[r][c];
+          if (ch !== " ") {
+            const col = bossLeft + c;
+            const row = 1 + r;
+
+            if (col >= 0 && col < COLUMNS && row >= 0 && row < ROWS) {
+              const pos = cellCenter(col, row);
+              const color = ch === "#" ? "#ff3b3b" : "#ffd166";
+              drawText(ch, pos.x, pos.y, color, 28);
+            }
+          }
+        }
+      }
+
+      // The center popup handles the boss destroyed message. Keeping this area clear prevents top text from crowding the score and HP bar.
+    }
+
+    function drawPopupLine(now, slot, y) {
+      const popup = popups[slot];
+      if (!popup || !popup.message) return;
+
+      const elapsed = now - popup.startTime;
+      if (elapsed > popup.duration) {
+        popup.message = "";
+        return;
+      }
+
+      const fadeStart = popup.duration * 0.65;
+      const alpha = elapsed > fadeStart ? 1 - (elapsed - fadeStart) / (popup.duration - fadeStart) : 1;
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      drawText(popup.message, canvas.width / 2, y, popup.color, popup.size);
+      ctx.restore();
+    }
+
+    function drawPopup(now) {
+      drawPopupLine(now, "main", canvas.height / 2 - 28);
+      drawPopupLine(now, "kill", canvas.height / 2 - 28);
+      drawPopupLine(now, "upgrade", canvas.height / 2 + 2);
+    }
+
+    function drawGame(now) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      drawText("FIGHTER AIRCRAFT", canvas.width / 2, 26, "#ffe45c", 26);
+      drawText(`Score: ${score} | Power: ${powerLevel}`, canvas.width / 2, 58, "#ffffff", 18);
+
+      if (gameState !== "boss" && gameState !== "explosion") {
+        drawText(message, canvas.width / 2, 82, "#cccccc", 16);
+      }
+
+      drawGrid();
+      drawHpBar();
+
+      if (gameState === "boss") {
+        drawBoss();
+      }
+
+      if (gameState === "explosion") {
+        drawExplosion(now);
+      }
+
+      for (const enemy of enemies) {
+        const pos = cellCenter(enemy.col, enemy.row);
+        if (enemy.symbol === BIG_ENEMY) {
+          drawText("X", pos.x, pos.y, "#42e8f5", 25);
+        } else {
+          drawText("x", pos.x, pos.y, "#6aff6a", 23);
+        }
+      }
+
+      for (const bullet of playerBullets) {
+        const pos = cellCenter(bullet.col, bullet.row);
+        drawText(PLAYER_BULLET, pos.x, pos.y, "#ffe45c", 24);
+      }
+
+      for (const bullet of enemyBullets) {
+        const pos = cellCenter(bullet.col, bullet.row);
+
+        if (bullet.symbol === ENEMY_BULLET) {
+          drawText("!", pos.x, pos.y, "#ff3b3b", 24);
+        } else if (bullet.symbol === BOSS_STRAIGHT_BULLET) {
+          drawText("+", pos.x, pos.y, "#ffffff", 24);
+        } else {
+          drawText("*", pos.x, pos.y, "#50a7ff", 24);
+        }
+      }
+
+      const playerPos = cellCenter(playerCol, ROWS - 1);
+      drawText(PLAYER, playerPos.x, playerPos.y, "#ffe45c", 24);
+
+      if (gameState !== "start" && gameState !== "gameover" && gameState !== "win" && !isPaused) {
+        drawPopup(now);
+      }
+
+      if (gameState === "gameover" || gameState === "win") {
+        ctx.fillStyle = "rgba(0, 0, 0, 0.72)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        const resultText = gameState === "win" ? "YOU WIN!" : "GAME OVER";
+        const resultColor = gameState === "win" ? "#ffe45c" : "#ff3b3b";
+
+        drawText(resultText, canvas.width / 2, canvas.height / 2 - 40, resultColor, 42);
+        drawText(`Final Score: ${score}`, canvas.width / 2, canvas.height / 2 + 8, "#ffffff", 22);
+        drawText("Press R or tap RESTART", canvas.width / 2, canvas.height / 2 + 48, "#cccccc", 18);
+      }
+
+      if (gameState === "start") {
+        ctx.fillStyle = "rgba(0, 0, 0, 0.72)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        drawText("FIGHTER AIRCRAFT", canvas.width / 2, canvas.height / 2 - 78, "#ffe45c", 38);
+        drawText("Press S or R to start", canvas.width / 2, canvas.height / 2 - 18, "#ffffff", 22);
+        drawText("Tap START on mobile", canvas.width / 2, canvas.height / 2 + 22, "#cccccc", 18);
+        drawText("A / ← and D / → to move", canvas.width / 2, canvas.height / 2 + 62, "#cccccc", 16);
+      }
+
+      if (isPaused) {
+        ctx.fillStyle = "rgba(0, 0, 0, 0.72)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        drawText("PAUSED", canvas.width / 2, canvas.height / 2 - 20, "#50a7ff", 42);
+        drawText("Press P or tap RESUME", canvas.width / 2, canvas.height / 2 + 28, "#ffffff", 20);
+      }
+
+      updateButtons();
+
+      if (gameState === "warning") {
+        ctx.fillStyle = "rgba(80, 0, 0, 0.25)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        const remaining = Math.max(0, (BOSS_WARNING_TIME - (now - warningStartTime)) / 1000);
+        drawText("WARNING", canvas.width / 2, canvas.height / 2 - 28, "#ff3b3b", 42);
+        drawText(`Boss appears in ${remaining.toFixed(1)}s`, canvas.width / 2, canvas.height / 2 + 18, "#ffffff", 22);
+      }
+    }
+
+    function spawnEnemy() {
+      const col = Math.floor(Math.random() * COLUMNS);
+      const exists = enemies.some(enemy => enemy.row === 0 && enemy.col === col);
+
+      if (exists) return;
+
+      if (Math.random() < BIG_ENEMY_CHANCE) {
+        enemies.push({
+          row: 0,
+          col,
+          hp: 2,
+          symbol: BIG_ENEMY
+        });
+      } else {
+        enemies.push({
+          row: 0,
+          col,
+          hp: 1,
+          symbol: SMALL_ENEMY
+        });
+      }
+    }
+
+    function spawnBossAttack() {
+      const bossRight = bossLeft + BOSS_WIDTH;
+      const patterns = ["straight", "spread", "single"];
+      const pattern = patterns[Math.floor(Math.random() * patterns.length)];
+
+      if (pattern === "straight") {
+        const possibleCols = [];
+        for (let c = bossLeft; c < bossRight; c++) {
+          possibleCols.push(c);
+        }
+
+        possibleCols.sort(() => Math.random() - 0.5);
+        const cols = possibleCols.slice(0, 2);
+
+        for (const col of cols) {
+          enemyBullets.push({
+            row: 3,
+            col,
+            dy: 1,
+            dx: 0,
+            symbol: BOSS_STRAIGHT_BULLET
+          });
+        }
+      } else if (pattern === "spread") {
+        const centerCol = bossLeft + Math.floor(BOSS_WIDTH / 2);
+
+        for (const dx of [-1, 0, 1]) {
+          enemyBullets.push({
+            row: 3,
+            col: centerCol,
+            dy: 1,
+            dx,
+            symbol: dx === 0 ? BOSS_STRAIGHT_BULLET : BOSS_DIAGONAL_BULLET
+          });
+        }
+      } else {
+        const col = bossLeft + Math.floor(Math.random() * BOSS_WIDTH);
+
+        enemyBullets.push({
+          row: 3,
+          col,
+          dy: 1,
+          dx: 0,
+          symbol: BOSS_STRAIGHT_BULLET
+        });
+      }
+    }
+
+    function updatePlaying(now) {
+      if (keys["a"] || keys["arrowleft"]) {
+        playerCol = Math.max(0, playerCol - 1);
+        keys["a"] = false;
+        keys["arrowleft"] = false;
+      }
+
+      if (keys["d"] || keys["arrowright"]) {
+        playerCol = Math.min(COLUMNS - 1, playerCol + 1);
+        keys["d"] = false;
+        keys["arrowright"] = false;
+      }
+
+      if (now - lastPlayerShotTime >= PLAYER_SHOOT_COOLDOWN) {
+        for (const col of getBulletColumns()) {
+          playerBullets.push({
+            row: ROWS - 2,
+            col
+          });
+        }
+
+        lastPlayerShotTime = now;
+      }
+
+      if (score >= BOSS_SCORE && gameState === "playing") {
+        gameState = "warning";
+        warningStartTime = now;
+        enemies = [];
+        enemyBullets = [];
+        message = "WARNING! Boss is approaching!";
+        return;
+      }
+
+      if (gameState === "playing") {
+        if (Math.random() < ENEMY_SPAWN_CHANCE) {
+          spawnEnemy();
+        }
+
+        for (const enemy of enemies) {
+          if (Math.random() < ENEMY_SHOOT_CHANCE) {
+            enemyBullets.push({
+              row: enemy.row + 1,
+              col: enemy.col,
+              dy: 1,
+              dx: 0,
+              symbol: ENEMY_BULLET
+            });
+          }
+        }
+
+        if (now - lastEnemyMoveTime >= ENEMY_MOVE_COOLDOWN) {
+          for (const enemy of enemies) {
+            enemy.row += 1;
+          }
+          lastEnemyMoveTime = now;
+        }
+      }
+
+      if (gameState === "warning") {
+        if (now - warningStartTime >= BOSS_WARNING_TIME) {
+          gameState = "boss";
+          bossHp = BOSS_HP_MAX;
+          bossLeft = Math.floor((COLUMNS - BOSS_WIDTH) / 2);
+          bossDirection = 1;
+          enemies = [];
+          enemyBullets = [];
+          playerBullets = [];
+          message = "BOSS APPEARS!";
+        }
+      }
+
+      if (gameState === "boss") {
+        if (now - lastBossMoveTime >= BOSS_MOVE_COOLDOWN) {
+          bossLeft += bossDirection;
+
+          if (bossLeft <= 0) {
+            bossLeft = 0;
+            bossDirection = 1;
+          } else if (bossLeft + BOSS_WIDTH >= COLUMNS) {
+            bossLeft = COLUMNS - BOSS_WIDTH;
+            bossDirection = -1;
+          }
+
+          lastBossMoveTime = now;
+        }
+
+        if (now - lastBossAttackTime >= BOSS_ATTACK_COOLDOWN) {
+          spawnBossAttack();
+          lastBossAttackTime = now;
+        }
+      }
+
+      moveObjects(now);
+      checkCollisions(now);
+    }
+
+    function moveObjects(now) {
+      if (now - lastPlayerBulletMoveTime >= PLAYER_BULLET_MOVE_COOLDOWN) {
+        playerBullets = playerBullets
+          .map(bullet => ({
+            row: bullet.row - 1,
+            col: bullet.col
+          }))
+          .filter(bullet => bullet.row >= 0);
+
+        lastPlayerBulletMoveTime = now;
+      }
+
+      if (now - lastEnemyBulletMoveTime >= ENEMY_BULLET_MOVE_COOLDOWN) {
+        enemyBullets = enemyBullets
+          .map(bullet => ({
+            row: bullet.row + bullet.dy,
+            col: bullet.col + bullet.dx,
+            dy: bullet.dy,
+            dx: bullet.dx,
+            symbol: bullet.symbol
+          }))
+          .filter(bullet =>
+            bullet.row >= 0 &&
+            bullet.row < ROWS &&
+            bullet.col >= 0 &&
+            bullet.col < COLUMNS
+          );
+
+        lastEnemyBulletMoveTime = now;
+      }
+    }
+
+    function checkCollisions(now) {
+      if (gameState === "boss") {
+        const bossRight = bossLeft + BOSS_WIDTH;
+        const remainingBullets = [];
+
+        for (const bullet of playerBullets) {
+          const hitBoss =
+            (bullet.row === 1 || bullet.row === 2) &&
+            bullet.col >= bossLeft &&
+            bullet.col < bossRight;
+
+          if (hitBoss) {
+            bossHp -= 1;
+            score += 1;
+            message = "Boss hit!";
+          } else {
+            remainingBullets.push(bullet);
+          }
+        }
+
+        playerBullets = remainingBullets;
+
+        if (bossHp <= 0) {
+          bossHp = 0;
+          gameState = "explosion";
+          explosionStartTime = now;
+          playerBullets = [];
+          enemyBullets = [];
+          message = "BOSS DESTROYED!";
+          showPopup("BOSS DESTROYED!", "#ff3b3b", DEFAULT_POPUP_DURATION, 34);
+          return;
+        }
+      }
+
+      if (gameState === "playing") {
+        const remainingBullets = [];
+
+        for (const bullet of playerBullets) {
+          let hitEnemy = null;
+
+          for (const enemy of enemies) {
+            if (enemy.row === bullet.row && enemy.col === bullet.col) {
+              hitEnemy = enemy;
+              break;
+            }
+          }
+
+          if (hitEnemy) {
+            hitEnemy.hp -= 1;
+
+            if (hitEnemy.hp <= 0) {
+              enemies = enemies.filter(enemy => enemy !== hitEnemy);
+
+              if (hitEnemy.symbol === BIG_ENEMY) {
+                score += 20;
+
+                if (Math.random() < UPGRADE_CHANCE) {
+                  if (powerLevel === 1) {
+                    powerLevel = 3;
+                    showPopup("Upgrade! Triple shot!", "#ffe45c", POPUP_DURATION, 22, "upgrade");
+                  } else if (powerLevel === 3) {
+                    powerLevel = 5;
+                    showPopup("Upgrade! Five-way shot!", "#ffe45c", POPUP_DURATION, 22, "upgrade");
+                  } else {
+                    showPopup("Big enemy destroyed!", "#2f9ca6", KILL_DURATION, 22, "kill");
+                  }
+                } else {
+                  showPopup("Big enemy destroyed!", "#2f9ca6", KILL_DURATION, 22, "kill");
+                }
+              } else {
+                score += 10;
+                showPopup("Small enemy destroyed!", "#4ca64c", KILL_DURATION, 22, "kill");
+              }
+            }
+          } else {
+            remainingBullets.push(bullet);
+          }
+        }
+
+        playerBullets = remainingBullets;
+      }
+
+      for (const bullet of enemyBullets) {
+        if (bullet.row === ROWS - 1 && bullet.col === playerCol) {
+          enemyBullets = enemyBullets.filter(item => item !== bullet);
+          downgradePower();
+          return;
+        }
+      }
+
+      if (gameState === "playing") {
+        const enemyReachedBottom = enemies.some(enemy => enemy.row >= ROWS - 1);
+
+        if (enemyReachedBottom) {
+          gameState = "gameover";
+          message = "GAME OVER";
+        }
+      }
+    }
+
+    function updateExplosion(now) {
+      if (now - explosionStartTime >= EXPLOSION_TIME) {
+        gameState = "win";
+        message = "YOU WIN!";
+      }
+    }
+
+    function gameLoop(now) {
+      if (!isPaused) {
+        if (gameState === "playing" || gameState === "warning" || gameState === "boss") {
+          updatePlaying(now);
+        } else if (gameState === "explosion") {
+          updateExplosion(now);
+        }
+      }
+
+      drawGame(now);
+      requestAnimationFrame(gameLoop);
+    }
+
+    document.addEventListener("keydown", event => {
+      const key = event.key.toLowerCase();
+
+      if (key === "s" && gameState === "start") {
+        startGame();
+      }
+
+      if (key === "r") {
+        handleStartOrRestart();
+      }
+
+      if (key === "p") {
+        togglePause();
+      }
+
+      if (canMovePlayer()) {
+        keys[key] = true;
+      }
+
+      if (["arrowleft", "arrowright", " "].includes(key)) {
+        event.preventDefault();
+      }
+    });
+
+    document.getElementById("leftBtn").addEventListener("click", () => {
+      if (!canMovePlayer()) return;
+      playerCol = Math.max(0, playerCol - 1);
+    });
+
+    document.getElementById("rightBtn").addEventListener("click", () => {
+      if (!canMovePlayer()) return;
+      playerCol = Math.min(COLUMNS - 1, playerCol + 1);
+    });
+
+    document.getElementById("actionBtn").addEventListener("click", () => {
+      if (gameState === "start" || gameState === "gameover" || gameState === "win") {
+        handleStartOrRestart();
+      } else {
+        togglePause();
+      }
+    });
+
+    resetGame();
+    requestAnimationFrame(gameLoop);
+  </script>
+</body>
+</html>
